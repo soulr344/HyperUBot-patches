@@ -1,19 +1,24 @@
-# Copyright 2020 nunopenim @github
-# Copyright 2020 prototype74 @github
+# Copyright 2020-2021 nunopenim @github
+# Copyright 2020-2021 prototype74 @github
 #
 # Licensed under the PEL (Penim Enterprises License), v1.0
 #
 # You may not use this file or any of the content within it, unless in
 # compliance with the PE License
 
-from userbot import MODULE_DESC, MODULE_DICT, MODULE_INFO, VERSION
-from userbot.include.aux_funcs import module_info
-from userbot.include.language_processor import (getBotLangCode, ScrappersText as msgRep,
-                                                ModuleDescriptions as descRep, ModuleUsages as usageRep)
+from userbot.include.language_processor import (getBotLangCode,
+                                                ScrappersText as msgRep,
+                                                ModuleDescriptions as descRep,
+                                                ModuleUsages as usageRep)
 from userbot.sysutils.configuration import getConfig
 from userbot.sysutils.event_handler import EventHandler
+from userbot.sysutils.registration import (register_cmd_usage,
+                                           register_module_desc,
+                                           register_module_info)
+from userbot.version import VERSION
 from telethon.errors import ChatSendMediaForbiddenError, MessageTooLongError
-from telethon.tl.types import Document, DocumentAttributeAudio, DocumentAttributeFilename
+from telethon.tl.types import (Document, DocumentAttributeAudio,
+                               DocumentAttributeFilename)
 from datetime import datetime
 from currency_converter import CurrencyConverter
 from googletrans import Translator, LANGUAGES
@@ -22,16 +27,18 @@ from gtts.tts import gTTSError
 from logging import getLogger
 from pydub import AudioSegment
 from os import remove, rename
-from os.path import basename, exists, getmtime
-from speech_recognition import AudioFile, Recognizer, UnknownValueError, RequestError
+from os.path import exists, getmtime, join
+from speech_recognition import (AudioFile, Recognizer, UnknownValueError,
+                                RequestError)
 from urllib.request import urlretrieve
 from zipfile import BadZipFile, ZipFile
 
 log = getLogger(__name__)
 ehandler = EventHandler(log)
 TEMP_DL_DIR = getConfig("TEMP_DL_DIR")
-CC_CSV_PATH = TEMP_DL_DIR + "currency.csv"
+CC_CSV_PATH = join(TEMP_DL_DIR, "currency.csv")
 DEST_LANG = getBotLangCode()
+
 
 def build_supported_langs():
     ret_val = ""
@@ -39,12 +46,14 @@ def build_supported_langs():
         ret_val += "`{}`: {}\n".format(i, LANGUAGES[i])
     return ret_val
 
-@ehandler.on(pattern=r"^\.scrlang$", outgoing=True)
+
+@ehandler.on(command="scrlang", outgoing=True)
 async def lang_check(event):
     await event.edit(msgRep.SCRLANG.format(LANGUAGES[DEST_LANG]))
     return
 
-@ehandler.on(pattern=r"^\.setlang(?: |$)(.*)", outgoing=True)
+
+@ehandler.on(command="setlang", hasArgs=True, outgoing=True)
 async def set_lang(event):
     global DEST_LANG
     args = event.pattern_match.group(1).split()
@@ -59,7 +68,8 @@ async def set_lang(event):
     await event.edit(msgRep.SUCCESS_LANG_CHANGE.format(LANGUAGES[args]))
     return
 
-@ehandler.on(pattern=r"^\.trt(?: |$)(.*)", outgoing=True)
+
+@ehandler.on(command="trt", hasArgs=True, outgoing=True)
 async def translate(event):
     if event.reply_to_msg_id:
         msg = await event.get_reply_message()
@@ -98,10 +108,10 @@ async def translate(event):
             await event.edit(msgRep.FAIL_TRANS_MSG)
         else:
             await event.edit(msgRep.FAIL_TRANS_TEXT)
-
     return
 
-@ehandler.on(pattern=r"^\.tts(?: |$)(.*)", outgoing=True)
+
+@ehandler.on(command="tts", hasArgs=True, outgoing=True)
 async def text_to_speech(event):
     if event.reply_to_msg_id:
         msg = await event.get_reply_message()
@@ -113,7 +123,7 @@ async def text_to_speech(event):
 
     try:
         tts = gTTS(text=msg, lang=DEST_LANG)
-        file_loc = TEMP_DL_DIR + "tts.mp3"
+        file_loc = join(TEMP_DL_DIR, "tts.mp3")
         tts.save(file_loc)
         await event.client.send_file(chat.id, file=file_loc, voice_note=True)
         await event.delete()
@@ -135,10 +145,10 @@ async def text_to_speech(event):
     except Exception as e:
         log.warning(e)
         await event.edit(msgRep.FAIL_TTS)
-
     return
 
-@ehandler.on(pattern=r"^\.stt$", outgoing=True)
+
+@ehandler.on(command="stt", outgoing=True)
 async def speech_to_text(event):
     """ Note: telethon may borrow a different DC id to download audio """
     if event.reply_to_msg_id:
@@ -166,7 +176,7 @@ async def speech_to_text(event):
             return
         if not file_format:  # alternative way
             file_format = msg.media.document.mime_type.split("/")[1]
-        filename = TEMP_DL_DIR + "audio." + file_format
+        filename = join(TEMP_DL_DIR, "audio." + file_format)
         await event.edit(msgRep.CONVERT_STT)
         try:
             await msg.download_media(file=filename)
@@ -180,7 +190,7 @@ async def speech_to_text(event):
 
     try:
         audio_file = AudioSegment.from_file(filename, file_format)
-        audio_wav = TEMP_DL_DIR + "audio.wav"
+        audio_wav = join(TEMP_DL_DIR, "audio.wav")
         audio_file.export(audio_wav, "wav")
 
         r = Recognizer()
@@ -206,8 +216,8 @@ async def speech_to_text(event):
         remove(audio_wav)
     except Exception as e:
         log.warning(f"Unable to delete audio(s): {e}")
-
     return
+
 
 def update_currency_data():
     if exists(CC_CSV_PATH):
@@ -217,9 +227,10 @@ def update_currency_data():
             return
 
     try:
-        zipfile = TEMP_DL_DIR + "currency.zip"
+        zipfile = join(TEMP_DL_DIR, "currency.zip")
         # get latest data from the European Central Bank
-        data_history = urlretrieve("http://www.ecb.int/stats/eurofxref/eurofxref-hist.zip", zipfile)
+        data_history = urlretrieve(
+            "http://www.ecb.int/stats/eurofxref/eurofxref-hist.zip", zipfile)
     except Exception as e:
         log.warning(f"Unable to download updated data history: {e}")
         return
@@ -235,7 +246,7 @@ def update_currency_data():
                     break
             zipObject.close()
         try:
-            rename(TEMP_DL_DIR + filename, CC_CSV_PATH)
+            rename(join(TEMP_DL_DIR, filename), CC_CSV_PATH)
             log.info("[CURRENCY] data history successfully updated")
         except Exception as e:
             log.warning(f"Unable to rename csv file: {e}")
@@ -248,10 +259,10 @@ def update_currency_data():
         remove(zipfile)
     except Exception as e:
         log.warning(f"Couldn't remove zip file: {e}")
-
     return
 
-@ehandler.on(pattern=r"^\.currency(?: |$)(.*)", outgoing=True)
+
+@ehandler.on(command="currency", hasArgs=True, outgoing=True)
 async def cc(event):
     args_from_event = event.pattern_match.group(1).split(" ", 2)
     if len(args_from_event) == 3:
@@ -277,16 +288,19 @@ async def cc(event):
             update_currency_data()
             c = CurrencyConverter(currency_file=CC_CSV_PATH)
         except Exception as e:
-            log.warning(f"Unable to read updated data history: {e}. Falling back to default currency data.")
+            log.warning(f"Unable to read updated data history: {e}. "
+                        "Falling back to default currency data.")
             c = CurrencyConverter()
-        if not c_from_iso in c.currencies:
+        if c_from_iso not in c.currencies:
             await event.edit(msgRep.CC_ISO_UNSUPPORTED.format(c_from_iso))
             return
-        if not c_to_iso in c.currencies:
+        if c_to_iso not in c.currencies:
             await event.edit(msgRep.CC_ISO_UNSUPPORTED.format(c_to_iso))
             return
         date = c.bounds[c_from_iso]
-        result = "{:.2f}".format(c.convert(amount=amount, currency=c_from_iso, new_currency=c_to_iso))
+        result = "{:.2f}".format(c.convert(amount=amount,
+                                           currency=c_from_iso,
+                                           new_currency=c_to_iso))
         strings = f"**{msgRep.CC_HEADER}**\n\n"
         strings += msgRep.CFROM_CTO.format(c_from_iso, c_to_iso) + "\n"
         strings += f"{amount} {c_from_iso} = {result} {c_to_iso}\n\n"
@@ -297,9 +311,17 @@ async def cc(event):
     except Exception as e:
         log.warning(f"Failed to convert currency: {e}")
         await event.edit(msgRep.UNABLE_TO_CC)
-
     return
 
-MODULE_DESC.update({basename(__file__)[:-3]: descRep.SCRAPPERS_DESC})
-MODULE_DICT.update({basename(__file__)[:-3]: usageRep.SCRAPPERS_USAGE})
-MODULE_INFO.update({basename(__file__)[:-3]: module_info(name="Scrappers", version=VERSION)})
+
+for cmd in ("trt", "tts", "stt", "scrlang", "setlang", "currency"):
+    register_cmd_usage(cmd,
+                       usageRep.SCRAPPERS_USAGE.get(cmd, {}).get("args"),
+                       usageRep.SCRAPPERS_USAGE.get(cmd, {}).get("usage"))
+
+register_module_desc(descRep.SCRAPPERS_DESC)
+register_module_info(
+    name="Scrappers",
+    authors="nunopenim, prototype74",
+    version=VERSION
+)
