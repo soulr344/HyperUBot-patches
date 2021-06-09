@@ -147,78 +147,6 @@ async def text_to_speech(event):
         await event.edit(msgRep.FAIL_TTS)
     return
 
-
-@ehandler.on(command="stt", outgoing=True)
-async def speech_to_text(event):
-    """ Note: telethon may borrow a different DC id to download audio """
-    if event.reply_to_msg_id:
-        msg = await event.get_reply_message()
-    else:
-        await event.edit(msgRep.REPLY_TO_VM)
-        return
-
-    filename, file_format = (None,)*2
-    voice_note = False
-
-    if msg.media and hasattr(msg.media, "document") and \
-       isinstance(msg.media.document, Document) and \
-       msg.media.document.mime_type.startswith("audio"):
-        for attribute in msg.media.document.attributes:
-            if isinstance(attribute, DocumentAttributeAudio):
-                if not voice_note:  # set only if not True already
-                    voice_note = attribute.voice
-            if isinstance(attribute, DocumentAttributeFilename):
-                if not file_format:  # set only if none
-                    string = attribute.file_name.split(".")
-                    file_format = string[-1]
-        if not voice_note:
-            await event.edit(msgRep.WORKS_WITH_VM_ONLY)
-            return
-        if not file_format:  # alternative way
-            file_format = msg.media.document.mime_type.split("/")[1]
-        filename = join(TEMP_DL_DIR, "audio." + file_format)
-        await event.edit(msgRep.CONVERT_STT)
-        try:
-            await msg.download_media(file=filename)
-        except Exception as e:
-            log.warning(e)
-            await event.edit(msgRep.FAILED_LOAD_AUDIO)
-            return
-    else:
-        await event.edit(msgRep.REPLY_TO_VM)
-        return
-
-    try:
-        audio_file = AudioSegment.from_file(filename, file_format)
-        audio_wav = join(TEMP_DL_DIR, "audio.wav")
-        audio_file.export(audio_wav, "wav")
-
-        r = Recognizer()
-        with AudioFile(audio_wav) as source:
-            audio = r.record(source)
-        result = r.recognize_google(audio)
-        text = f"**{msgRep.STT}**\n\n"
-        text += f"{msgRep.STT_TEXT}:\n"
-        text += f"__{result}__"
-        await event.edit(text)
-    except UnknownValueError:
-        await event.edit(msgRep.STT_NOT_RECOGNIZED)
-    except RequestError as re:
-        await event.edit("`{msgRep.STT_REQ_FAILED} {re}`")
-    except MessageTooLongError:
-        await event.edit(msgRep.STT_OUTPUT_TOO_LONG)
-    except Exception as e:
-        log.warning(e)
-        await event.edit(msgRep.UNABLE_TO_STT)
-
-    try:
-        remove(filename)
-        remove(audio_wav)
-    except Exception as e:
-        log.warning(f"Unable to delete audio(s): {e}")
-    return
-
-
 def update_currency_data():
     if exists(CC_CSV_PATH):
         file_date = datetime.fromtimestamp(getmtime(CC_CSV_PATH))
@@ -314,7 +242,7 @@ async def cc(event):
     return
 
 
-for cmd in ("trt", "tts", "stt", "scrlang", "setlang", "currency"):
+for cmd in ("trt", "tts", "scrlang", "setlang", "currency"):
     register_cmd_usage(cmd,
                        usageRep.SCRAPPERS_USAGE.get(cmd, {}).get("args"),
                        usageRep.SCRAPPERS_USAGE.get(cmd, {}).get("usage"))
